@@ -1,0 +1,168 @@
+import cv2
+import numpy as np
+import os
+from fpdf import FPDF
+import speech_recognition as sr
+
+# Path
+folder_path = os.path.dirname(os.path.realpath(__file__))
+
+# Font Options
+font_options = {
+    "1": ("SIMPLEX", cv2.FONT_HERSHEY_SIMPLEX),
+    "2": ("PLAIN", cv2.FONT_HERSHEY_PLAIN),
+    "3": ("DUPLEX", cv2.FONT_HERSHEY_DUPLEX),
+    "4": ("COMPLEX", cv2.FONT_HERSHEY_COMPLEX),
+    "5": ("TRIPLEX", cv2.FONT_HERSHEY_TRIPLEX),
+    "6": ("COMPLEX_SMALL", cv2.FONT_HERSHEY_COMPLEX_SMALL),
+    "7": ("SCRIPT_SIMPLEX", cv2.FONT_HERSHEY_SCRIPT_SIMPLEX),
+    "8": ("SCRIPT_COMPLEX", cv2.FONT_HERSHEY_SCRIPT_COMPLEX),
+    "9": ("ITALIC_SIMPLEX", cv2.FONT_HERSHEY_SIMPLEX | cv2.FONT_ITALIC),
+    "10": ("ITALIC_SCRIPT", cv2.FONT_HERSHEY_SCRIPT_SIMPLEX | cv2.FONT_ITALIC),
+}
+
+color_options = {
+    "1": ("Black", (0, 0, 0)),
+    "2": ("Red", (0, 0, 255)),
+    "3": ("Green", (0, 255, 0)),
+    "4": ("Blue", (255, 0, 0)),
+    "5": ("Yellow", (0, 255, 255)),
+    "6": ("Purple", (255, 0, 255)),
+    "7": ("Orange", (0, 128, 255)),
+    "8": ("Teal", (255, 255, 0)),
+    "9": ("Gray", (128, 128, 128)),
+    "10": ("Brown", (42, 42, 165)),
+}
+
+paper_types = {
+    "1": "ruled",
+    "2": "plain",
+    "3": "grid"
+}
+
+spacing_options = {
+    "1": 10,
+    "2": 20,
+    "3": 30
+}
+
+def get_text_from_speech():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("\n🎤 Speak your text (pause to end)...")
+        audio = recognizer.listen(source, timeout=15, phrase_time_limit=20)
+        try:
+            return recognizer.recognize_google(audio)
+        except sr.UnknownValueError:
+            print("❌ Couldn't understand audio.")
+        except sr.RequestError:
+            print("❌ Speech service failed.")
+        return ""
+
+# Ask if using speech
+use_speech = input("Do you want to use speech to input text? (y/n): ").lower() == 'y'
+if use_speech:
+    text = get_text_from_speech()
+else:
+    print("\nEnter your text (press ENTER twice to finish):")
+    lines = []
+    while True:
+        line = input()
+        if line == "":
+            break
+        lines.append(line)
+    text = " ".join(lines)
+
+# Get font
+print("\nSelect Font Style:")
+for key, (name, _) in font_options.items():
+    print(f"{key}: {name}")
+font_choice = input("Enter font style number (1–10): ")
+font = font_options.get(font_choice, font_options["7"])[1]
+
+# Get color
+print("\nSelect Font Color:")
+for key, (name, _) in color_options.items():
+    print(f"{key}: {name}")
+color_choice = input("Enter font color number (1–10): ")
+color = color_options.get(color_choice, color_options["1"])[1]
+
+# Font scale
+try:
+    font_scale = float(input("\nEnter font size (e.g., 1.0, 1.5): "))
+except:
+    font_scale = 1.5
+
+# Choose paper
+print("\nSelect Paper Type:\n1. Ruled\n2. Plain\n3. Grid")
+paper_type_choice = input("Enter paper type number: ")
+paper_type = paper_types.get(paper_type_choice, "ruled")
+
+# Choose spacing
+print("\nSelect Line Spacing:\n1. Small\n2. Medium\n3. Large")
+spacing_choice = input("Enter spacing number: ")
+line_spacing = spacing_options.get(spacing_choice, 20)
+
+# Page size
+img_width = 850
+img_height = 1100
+max_width = img_width - 100
+max_lines_per_page = 30
+
+# Create background
+def create_paper(paper_type):
+    img = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255
+    if paper_type == "ruled":
+        for y in range(60, img.shape[0], line_spacing + 10):
+            cv2.line(img, (50, y), (img.shape[1] - 50, y), (200, 200, 200), 1)
+    elif paper_type == "grid":
+        for y in range(60, img.shape[0], line_spacing + 10):
+            cv2.line(img, (50, y), (img.shape[1] - 50, y), (200, 200, 200), 1)
+        for x in range(50, img.shape[1], 50):
+            cv2.line(img, (x, 60), (x, img.shape[0] - 50), (200, 200, 200), 1)
+    return img
+
+# Split text into lines
+def split_text_into_lines(text, font, font_scale, thickness, max_width):
+    words = text.split(" ")
+    lines, current_line = [], ""
+    for word in words:
+        test_line = f"{current_line} {word}".strip()
+        width = cv2.getTextSize(test_line, font, font_scale, thickness)[0][0]
+        if width < max_width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+    return lines
+
+lines = split_text_into_lines(text, font, font_scale, 2, max_width)
+pages = [lines[i:i+max_lines_per_page] for i in range(0, len(lines), max_lines_per_page)]
+
+image_paths = []
+
+for i, page_lines in enumerate(pages):
+    img = create_paper(paper_type)
+    y = 80
+    for line in page_lines:
+        x = 60
+        cv2.putText(img, line, (x, y), font, font_scale, color, 2, cv2.LINE_AA)
+        y += int(font_scale * 30)
+    path = os.path.join(folder_path, f"handwriting_page_{i+1}.png")
+    cv2.imwrite(path, img)
+    image_paths.append(path)
+    print(f"✅ Saved: {path}")
+
+# Create PDF
+pdf = FPDF(unit='pt', format='A4')
+for path in image_paths:
+    pdf.add_page()
+    pdf.image(path, x=0, y=0, w=595.2, h=841.8)
+pdf_path = os.path.join(folder_path, "handwriting_output.pdf")
+try:
+    pdf.output(pdf_path)
+    print(f"\n📄 PDF saved at: {pdf_path}")
+except PermissionError:
+    print(f"❌ Permission denied: Close the file if it's open and try again.")
